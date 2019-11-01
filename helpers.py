@@ -50,14 +50,14 @@ class GDCIterator:
 
 '''
 A class that provides the authentication token for controlled access data.
-And implementation that will read the token from a file.
+And an implementation that will read the token from a file.
 '''
 class GDCAuthProvider(ABC):
   @abstractmethod
   def get_token(self):
     raise NotImplemented
 
-  def add_HTTP_header(self, headers):
+  def add_auth_header(self, headers):
     headers['X-Auth-Token'] = self.get_token()
     return headers
 
@@ -73,15 +73,16 @@ class GDCFileAuthProvider(GDCAuthProvider):
 Downloads a file from GDC
 '''
 class GDCFileDownloader:
-  def __init__(self, file_id, output_path, auth_provider=None):
+  def __init__(self, file_id, output_path, auth_provider=None, progress_callback=lambda t, c: None):
     self.file_id = file_id
     self.output_path = output_path
     self.auth_provider = auth_provider
+    self.progress_callback = progress_callback
 
-  def download(self, progress_callback=lambda t, c: None):
+  def __call__(self):
     headers = {'Content-Type': 'application/json'}
     if self.auth_provider:
-      self.auth_provider.add_HTTP_header(headers)
+      self.auth_provider.add_auth_header(headers)
 
     with requests.get(f'{GDC_ENDPOINT}data/{self.file_id}', headers=headers, stream=True) as r:
       r.raise_for_status()
@@ -90,4 +91,4 @@ class GDCFileDownloader:
         for chunk in r.iter_content(chunk_size=8192):
           if chunk:  # filter out keep-alive new chunks
             f.write(chunk)
-            progress_callback(total_length, len(chunk))
+            self.progress_callback(total_length, len(chunk))
