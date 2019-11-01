@@ -1,16 +1,21 @@
-import requests
-from helper import GDCIterator, GDC_ENDPOINT
 
-def process_file(file, auth_token=None):
+from helpers import GDCIterator, GDCFileAuthProvider, GDCFileDownloader
+
+def process_file(file):
   fn = file['file_name']
   f_id = file['file_id']
+  auth_provider = GDCFileAuthProvider()
 
-  if file['access'] == 'controlled' and auth_token is None:
-    raise Exception(f'Downloading {fn} requires authentication')
+  dl = GDCFileDownloader(f_id, fn, auth_provider)
+  dl_bytes = 0
+  def p(t, c):
+    nonlocal dl_bytes
+    dl_bytes = dl_bytes + c
+    print(f'downloading {fn}: {dl_bytes}/{t}', end='\r')
 
-  dl = requests.get(GDC_ENDPOINT+'data/'+f_id)
-  with open(fn, 'wb') as f:
-    f.write(dl.content)
+  dl.download(p)
+  print('')
+
   return 1
 
 
@@ -52,7 +57,7 @@ file_cnt = 0
 for case in GDCIterator('cases', case_filters):
   file_filters['content'][0]['content']['value'] = case['submitter_id']
   for fl in GDCIterator('files', file_filters):
-    print(fl['file_name'])
+    process_file(fl)
     file_cnt = file_cnt+1
 
-print(file_cnt)
+print(f'{file_cnt} files downloaded')
