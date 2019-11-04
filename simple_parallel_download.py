@@ -25,7 +25,6 @@ def process_file(file, q):
 
   return dl
 
-
 case_filters = {
   'op': '=',
   'content': {

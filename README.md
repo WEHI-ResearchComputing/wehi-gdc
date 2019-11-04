@@ -8,10 +8,16 @@ You can fork this project and modify it for your use case. Please notify us of d
 or, even better, provide a pull request.
 
 ## Prerequisites
-This code has only been tested with Python 3.7. Your Python environment also requires the `requests` and 
-`multiprocessing` modules. These are available in the WEHI environment via
+This code has only been tested with Python 3.7. 
 ```
 module load python/3.7.1
+```
+
+Additional python modules in home directory or in a virtual environment using the provided `requirements.txt`.
+
+To run in the batch system you must also load the PBS DRMAA module
+```
+module load pbs-drmaa
 ```
 
 ## Simple downloads
