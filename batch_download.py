@@ -24,7 +24,7 @@ NUM_JOBS = 2
 WORKING_DIR = os.getcwd()
 
 # Resources for your job in qstat format
-RESOURCES = '-l nodes=1:ppn=1,mem=1gb,walltime=01:00:00'
+RESOURCES = '-l nodes=1:ppn=1,mem=1gb,walltime=24:00:00'
 #-----------------------------------------------------------------------------
 
 #-----------------------------------------------------------------------------
@@ -86,7 +86,7 @@ def get_file_list():
 
   files = []
   for case in GDCIterator('cases', case_filters):
-    if len(files) > 2:
+    if len(files) > 1:
       break
 
     file_filters['content'][0]['content']['value'] = case['submitter_id']
