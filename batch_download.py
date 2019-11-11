@@ -18,13 +18,12 @@ Good luck!
 # Number of current jobs (start small).
 NUM_JOBS = 2
 
-# Working directory where the script is expected to be located and
-# where the script will run (may not be where the files are).
+# Working directory where data will be downloaded
 # Note: Probably should be absolute path.
-WORKING_DIR = os.getcwd()
+DATA_DIR = '/stornext/HPCScratch/PapenfussLab/projects/gdc_download/'
 
 # Resources for your job in qstat format
-RESOURCES = '-l nodes=1:ppn=1,mem=1gb,walltime=24:00:00'
+RESOURCES = '-l nodes=1:ppn=2,mem=2gb,walltime=24:00:00'
 #-----------------------------------------------------------------------------
 
 #-----------------------------------------------------------------------------
@@ -76,6 +75,19 @@ file_filters = {
 }
 #-----------------------------------------------------------------------------
 
+#-----------------------------------------------------------------------------
+'''
+A simple container for files associated with an individual patient
+'''
+class CaseFileSet:
+  def __init__(self):
+    self.file_ids = []
+    self.file_names = []
+
+  def add(self, file_id, file_name):
+    self.file_ids.append(file_id)
+    self.file_names.append(os.path.join(DATA_DIR, file_name))
+#-----------------------------------------------------------------------------
 
 #-----------------------------------------------------------------------------
 """
@@ -91,11 +103,14 @@ def get_file_list():
 
     file_filters['content'][0]['content']['value'] = case['submitter_id']
 
+    cfs = CaseFileSet()
     for fl in GDCIterator('files', file_filters):
       filename = fl['file_name']
       file_id = fl['file_id']
-      if is_file_needed(filename):
-        files.append((filename, file_id))
+      cfs.add(file_id, filename)
+
+    if is_file_needed(cfs):
+      files.append(cfs)
 
   print('{n} files found.'.format(n=len(files)))
 
@@ -107,25 +122,25 @@ def get_file_list():
  This class builds and manages a batch job
 """
 class Job:
-  def __init__(self, output_path, file_id):
-    self.file_id = file_id
-    self.output_path = output_path
+  def __init__(self, case_file_set):
+    self.cfs = case_file_set
 
   def __call__(self, *args, **kwargs):
-    output_path = self.output_path
+    output_paths = self.cfs.file_names
+    file_ids = self.cfs.file_ids
 
-    print('Building job for {fn}'.format(fn=output_path))
+    print('Building job for {fn1}, {fn2}'.format(fn1=output_paths[0], fn2=output_paths[0]))
     s = drmaa.Session()
     s.initialize()
 
     try:
       jt = s.createJobTemplate()
-      jt.workingDirectory = WORKING_DIR
-      jt.outputPath = WORKING_DIR
+      jt.workingDirectory = os.getcwd()
+      jt.outputPath = os.getcwd()
       jt.joinFiles = True
-      jt.jobName = os.path.basename(output_path)
+      jt.jobName = os.path.basename(output_paths[0])
       jt.remoteCommand = os.path.join(os.getcwd(), 'download-and-process.sh')
-      jt.args = [self.output_path, self.file_id]
+      jt.args = [','.join(output_paths), ','.join(file_ids)]
       jt.nativeSpecification = RESOURCES
       job_id = s.runJob(jt)
 
@@ -149,12 +164,13 @@ class Job:
 #-----------------------------------------------------------------------------
 def main():
   # Get the file list and filter for the ones we want to process
-  files = get_file_list()
+  case_files = get_file_list()
+  case_files = case_files[:2]
 
   # A pool of workers. Each worker will manage a job in the batch system
   p = Pool(NUM_JOBS)
   # Create jobs for each file
-  jobs = [Job(fn[0], fn[1]) for fn in files]
+  jobs = [Job(fn) for fn in case_files]
   # Submit them to the pool
   submitted_jobs = [p.apply_async(job) for job in jobs]
 

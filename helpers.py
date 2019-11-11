@@ -72,8 +72,12 @@ class GDCFileAuthProvider(GDCAuthProvider):
 '''
 Downloads a file from GDC
 '''
+
+def noop(t, c):
+  return None
+
 class GDCFileDownloader:
-  def __init__(self, file_id, output_path, auth_provider=None, progress_callback=lambda t, c: None):
+  def __init__(self, file_id, output_path, auth_provider=None, progress_callback=noop):
     self.file_id = file_id
     self.output_path = output_path
     self.auth_provider = auth_provider
