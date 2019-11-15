@@ -3,6 +3,8 @@ from abc import ABC, abstractmethod
 import requests
 import sys
 import os
+import hashlib
+import time
 
 GDC_ENDPOINT = 'https://api.gdc.cancer.gov/'
 
@@ -73,20 +75,49 @@ class GDCFileAuthProvider(GDCAuthProvider):
 Downloads a file from GDC
 '''
 
-def noop(t, c):
-  return None
+class BasicProgressMeter:
+  def __init__(self):
+    self.sum = 0
+
+  def __call__(self, file_name, total_length, chunk_length, **kwargs):
+    self.sum = self.sum + chunk_length
+    print(f'{file_name}: {self.sum}/{total_length}')
 
 class GDCFileDownloader:
-  def __init__(self, file_id, output_path, auth_provider=None, progress_callback=noop):
+  def __init__(self, file_id, output_path, md5sum=None, auth_provider=None, progress_callback=BasicProgressMeter()):
     self.file_id = file_id
     self.output_path = output_path
     self.auth_provider = auth_provider
     self.progress_callback = progress_callback
+    self.md5sum = md5sum
+    self.sum_file = os.path.splitext(output_path)[0] + '.md5'
+
+  def _check_md5(self):
+    if self.md5sum is None:
+      return False
+
+    if not os.path.exists(self.sum_file):
+      return False
+
+    with open(self.sum_file, 'r') as f:
+      md5sum = f.read(f).strip()
+
+    return md5sum == self.md5sum
 
   def __call__(self):
+    print(f'{self.output_path}: Start processing.')
+    if self._check_md5():
+      print(f'{self.output_path}: m5sum matches expected m5sum, skipping download.')
+      return
+    print(f'{self.output_path}: Download starting.')
+
+    start = int(time.time())
+
     headers = {'Content-Type': 'application/json'}
     if self.auth_provider:
       self.auth_provider.add_auth_header(headers)
+
+    md5 = hashlib.md5()
 
     with requests.get(f'{GDC_ENDPOINT}data/{self.file_id}', headers=headers, stream=True) as r:
       r.raise_for_status()
@@ -95,4 +126,14 @@ class GDCFileDownloader:
         for chunk in r.iter_content(chunk_size=8192):
           if chunk:  # filter out keep-alive new chunks
             f.write(chunk)
-            self.progress_callback(total_length, len(chunk))
+            md5.update(chunk)
+            self.progress_callback(self.output_path, total_length, len(chunk))
+
+
+    md5sum = md5.hexdigest()
+    print(f'{self.output_path}: md5sum={md5sum}')
+
+    with open(self.sum_file, 'w') as f:
+      f.write(md5sum + '\n')
+
+    print(f'{self.output_path}: download completed in {int(time.time())-start} seconds')
