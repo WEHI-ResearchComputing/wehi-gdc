@@ -1,3 +1,6 @@
+nohup.out
+*.o*
+*.pkl
 .idea/
 gdc-user-token.txt
 *.bam
