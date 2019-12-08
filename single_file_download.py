@@ -15,7 +15,11 @@ def build_parser():
                       required=True)
   parser.add_argument('--md5sums',
                       dest='md5sums',
-                      help='md5 hashes',
+                      help='expected md5 hashes',
+                      required=False)
+  parser.add_argument('--sizes',
+                      dest='sizes',
+                      help='expected file sizes',
                       required=False)
   return parser
 
@@ -26,19 +30,28 @@ def main(argv):
 
   output_paths = options.output_paths.split(',')
   file_ids = options.file_ids.split(',')
-  md5sums = options.md5sums.split(',')
-  if md5sums is None:
+
+  md5sums = options.md5sums
+  if not md5sums:
     md5sums = [None] * len(file_ids)
+  else:
+    md5sums = md5sums.split(',')
+
+  sizes = options.sizes
+  if not sizes:
+    sizes = [None] * len(file_ids)
+  else:
+    sizes = [int(s) for s in sizes.split(',')]
 
   p = mp.Pool(len(file_ids))
   downloads = []
   auth_provider = GDCFileAuthProvider()
 
-  for (output_path, file_id, md5sum) in zip(output_paths, file_ids, md5sums):
+  for (output_path, file_id, md5sum, size) in zip(output_paths, file_ids, md5sums, sizes):
     output_path = output_path.strip()
     file_id = file_id.strip()
 
-    dl = GDCFileDownloader(file_id, output_path, auth_provider=auth_provider, md5sum=md5sum)
+    dl = GDCFileDownloader(file_id, output_path, auth_provider=auth_provider, md5sum=md5sum, expected_file_size=size)
     h = p.apply_async(dl)
     downloads.append(h)
 

@@ -1,3 +1,14 @@
+"""
+This is a template for building a system that will list GDC files, download them and then submit jobs to the batch
+system process them. You need to
+1. Edit the case and file filters to select the data and file types that you need
+2. Fill in the is_file_needed function (this determines whether the file should be downloaded
+3. Adapt the get_file_list function for your use case
+4. Provide a process.sh bash script that takes source endpoint file name as argument. You will need
+   to know where the file is located based on your endpoint configuration.
+Good luck!
+"""
+
 import os
 import sys
 import drmaa
@@ -5,17 +16,6 @@ from multiprocessing.pool import Pool
 from argparse import ArgumentParser
 from helpers import GDCIterator
 import pickle
-
-"""
-This is a template for building a system that will list GDC files, download them and then submit jobs to the batch 
-system process them. You need to
-1. Edit the case and file filters to select the data and file types that you need 
-2. Fill in the is_file_needed function (this determines whether the file should be downloaded
-3. Adapt the get_file_list function for your use case
-4. Provide a process.sh bash script that takes source endpoint file name as argument. You will need
-   to know where the file is located based on your endpoint configuration.
-Good luck!
-"""
 
 #-----------------------------------------------------------------------------
 # Resources for your job in qstat format
@@ -62,7 +62,7 @@ case_filters = {
   'op': '=',
   'content': {
     'field': 'project.project_id',
-    'value': 'TCGA-SKCM'
+    'value': None
   }
 }
 
@@ -129,6 +129,19 @@ def build_parser():
                       type=str,
                       default=None,
                       required=False)
+  parser.add_argument('--gdc-project-id',
+                      dest='gdc_project_id',
+                      help='The GDC project id, e.g. SKCM, LUAD, etc',
+                      type=str,
+                      default=None,
+                      required=True)
+  parser.add_argument('--dry-run',
+                      dest='dry_run',
+                      help='Just determine how runs are required.',
+                      type=bool,
+                      default=False,
+                      required=False)
+
   return parser
 #-----------------------------------------------------------------------------
 
@@ -138,16 +151,19 @@ def build_parser():
 A simple container for files associated with an individual patient
 '''
 class CaseFileSet:
-  def __init__(self, output_dir):
+  def __init__(self, output_dir, case_id):
     self.file_ids   = []
     self.file_names = []
     self.md5s       = []
+    self.sizes      = []
+    self.case_id    = case_id
     self.output_dir = output_dir
 
-  def add(self, file_id, file_name, md5):
+  def add(self, file_id, file_name, md5, size):
     self.md5s.append(md5)
     self.file_ids.append(file_id)
     self.file_names.append(os.path.join(self.output_dir, file_name))
+    self.sizes.append(size)
 #-----------------------------------------------------------------------------
 
 
@@ -155,28 +171,22 @@ class CaseFileSet:
 """
 During testing, just return a single file, then scale up
 """
-def get_file_list(output_dir, start_after, stop_after):
-  print('Starting file listing')
+def get_file_list(output_dir):
+  print('Starting file query')
 
   files = []
   cnt = 0
   for case in GDCIterator('cases', case_filters):
-
-    cnt = cnt + 1
-    if cnt > stop_after:
-      break
-    if cnt <= start_after:
-      continue
-
     this_case = case['submitter_id']
     file_filters['content'][0]['content']['value'] = this_case
 
-    cfs = CaseFileSet(output_dir)
+    cfs = CaseFileSet(output_dir, case['case_id'])
     for fl in GDCIterator('files', file_filters):
       filename = fl['file_name']
       file_id  = fl['file_id']
       md5      = fl['md5sum']
-      cfs.add(file_id, filename, md5)
+      size     = fl['file_size']
+      cfs.add(file_id, filename, md5, size)
       print(f'found {filename}')
 
     files.append(cfs)
@@ -197,8 +207,9 @@ class Job:
     output_paths = self.cfs.file_names
     file_ids = self.cfs.file_ids
     md5sums = self.cfs.md5s
+    sizes = self.cfs.sizes
 
-    print('Building job for {fn1}, {fn2}, etc'.format(fn1=output_paths[0], fn2=output_paths[1]))
+    print('Building job for {fn1}, etc'.format(fn1=output_paths[0]))
     s = drmaa.Session()
     s.initialize()
 
@@ -209,7 +220,7 @@ class Job:
       jt.joinFiles = True
       jt.jobName = os.path.basename(output_paths[0])
       jt.remoteCommand = os.path.join(os.getcwd(), 'download-and-process.sh')
-      jt.args = [','.join(output_paths), ','.join(file_ids), ','.join(md5sums)]
+      jt.args = [','.join(output_paths), ','.join(file_ids), ','.join(md5sums), ','.join([str(size) for size in sizes])]
       jt.nativeSpecification = RESOURCES
       job_id = s.runJob(jt)
 
@@ -240,32 +251,47 @@ def main(argv):
   stop_after = options.stop_after
   start_after = options.start_after
   output_dir = options.output_dir
+  os.makedirs(output_dir, mode=0o770, exist_ok=True)
   save_query_file = options.save_query_file
+  dry_run = options.dry_run
+  gdc_project_id = options.gdc_project_id
+
+  case_filters['content']['value'] = gdc_project_id
 
   # Get the file list and filter for the ones we want to process
   if save_query_file is not None and os.path.exists(save_query_file):
     with open(save_query_file, 'rb') as f:
       case_files = pickle.load(f)
   else:
-    case_files = get_file_list(output_dir, start_after, stop_after)
+    case_files = get_file_list(output_dir)
 
   if save_query_file is not None and not os.path.exists(save_query_file):
     with open(save_query_file, 'wb') as f:
       pickle.dump(case_files, f)
 
-  #case_files = filter(are_files_needed, case_files)
-  #cnt = 0
-  #for _ in case_files:
-  # cnt = cnt + 1
-  #print(cnt)
-  #quit()
+  case_files = filter(are_files_needed, case_files)
+
+  if dry_run:
+    cnt = 0
+    for _ in case_files:
+      cnt += 1
+    print(f'{cnt} cases need one or more downloads')
+    quit()
+
   # A pool of workers. Each worker will manage a job in the batch system
   p = Pool(num_jobs)
-  # Create jobs for each file
-  jobs = [Job(fn) for fn in case_files]
 
-  # Submit them to the pool
-  submitted_jobs = [p.apply_async(job) for job in jobs]
+  # Create jobs for each file
+  submitted_jobs = []
+  cnt = 0
+  for fn in case_files:
+    if cnt>=stop_after:
+      break
+    cnt += 1
+    if cnt<=start_after:
+      continue
+
+    submitted_jobs.append(p.apply_async(Job(fn)))
 
   # Wait for them to finish
   for submitted_job in submitted_jobs:

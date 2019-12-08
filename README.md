@@ -30,3 +30,15 @@ formulate other queries.
 
 The `GDCIterator` helper class in `helpers.py` file provides a Python iterator API for GDC queries.
 
+## Batch download and process workflows
+The `batch_download.py` script allows per case files to be downloaded as batch jobs. if the downloads are successful a bash script called `../process.sh` is called. The expectation is that this repository will be a submodule in your workflow respository. The script is passed a comma seperated list of files for that case.
+
+For example:
+```
+python -u batch_download.py --num-jobs 2 --output-dir /home/thomas.e/projects/gdc_download/LUAD --save-query-file query.pkl --gdc-project-id TCGA-LUAD
+```
+
+* Maintain two concurrent jobs in the batch system. Each job processes one case.
+* GDC files are written to `/home/thomas.e/projects/gdc_download/LUAD`
+* The query is cached in `query.pkl`. This is useful because the query can take tens of minutes
+* Download files for the TCGA-LUAD (lung cancer) project

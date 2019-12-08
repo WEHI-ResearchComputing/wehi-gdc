@@ -101,7 +101,7 @@ class BasicProgressMeter:
 class GDCFileDownloader:
   CURL = 'curl -H "Content-Type: application/json" {auth_header} https://api.gdc.cancer.gov/data/{file_id} -o {output_path}'
 
-  def __init__(self, file_id, output_path, md5sum=None, auth_provider=None, pycurl=True, progress_callback=BasicProgressMeter()):
+  def __init__(self, file_id, output_path, expected_file_size=None, md5sum=None, auth_provider=None, pycurl=True, progress_callback=BasicProgressMeter()):
     self.file_id = file_id
     self.output_path = output_path
     self.auth_provider = auth_provider
@@ -109,6 +109,7 @@ class GDCFileDownloader:
     self.md5sum = md5sum
     self.sum_file = os.path.splitext(output_path)[0] + '.md5'
     self.pycurl = pycurl
+    self.expected_file_size = expected_file_size
 
   def _check_md5(self):
     if self.md5sum is None:
@@ -173,22 +174,53 @@ class GDCFileDownloader:
   def _do_download_curl(self):
     print(f'{self.output_path}: libcurl download starting.')
 
-    with open(self.output_path, 'wb') as f:
-      curl = pycurl.Curl()
-      curl.setopt(pycurl.URL, self._get_endpoint())
-      curl.setopt(pycurl.CONNECTTIMEOUT, 300)
-      curl.setopt(pycurl.WRITEDATA, f)
-      headers = ['Content-Type: application/json']
-      if self.auth_provider:
-        headers.append(f'X-Auth-Token: {self.auth_provider.get_token()}')
-      curl.setopt(pycurl.HTTPHEADER, headers)
-      curl.perform()
-      print(curl.errstr())
-      curl.close()
+    # GDC silently drops connections so keep trying until the file is downloaded.
+    while True:
+      if os.path.exists(self.output_path) and os.path.getsize(self.output_path) >= self.expected_file_size:
+        break
+
+      self._pycurl_data_transfer()
+
+      if not self.expected_file_size:
+        break
+
+      # Try again in a minute
+      time.sleep(60)
 
     md5 = md5sum(self.output_path)
 
     self._write_and_check_md5(md5)
+
+  def _pycurl_data_transfer(self):
+    curl = pycurl.Curl()
+    curl.setopt(pycurl.URL, self._get_endpoint())
+    curl.setopt(pycurl.CONNECTTIMEOUT, 300)
+
+    # HTTP headers including AUTH if required
+    headers = ['Content-Type: application/json']
+    if self.auth_provider:
+      headers.append(f'X-Auth-Token: {self.auth_provider.get_token()}')
+    curl.setopt(pycurl.HTTPHEADER, headers)
+
+    # If file exists attempt restart
+    if os.path.exists(self.output_path):
+      sz = os.path.getsize(self.output_path)
+      print(f'Attempting restart at {sz}')
+      curl.setopt(pycurl.RESUME_FROM, sz)
+      flags = 'ab'
+    else:
+      flags = 'wb'
+
+    with open(self.output_path, flags) as f:
+
+      curl.setopt(pycurl.WRITEDATA, f)
+      curl.perform()
+      print(curl.errstr())
+      curl.close()
+
+    if not os.path.exists(self.output_path) or os.path.getsize(self.output_path)<1000:
+      raise Exception(f'{self.output_path}: did not download or is suspiciously short.')
+
 
   def _do_download_requests(self):
     print(f'{self.output_path}: requests download starting.')

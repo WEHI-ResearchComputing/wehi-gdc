@@ -1,3 +1,4 @@
 requests
 blessings
 drmaa
+pycurl
