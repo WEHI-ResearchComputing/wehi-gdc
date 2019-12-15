@@ -138,8 +138,14 @@ def build_parser():
   parser.add_argument('--dry-run',
                       dest='dry_run',
                       help='Just determine how runs are required.',
-                      type=bool,
+                      action='store_true',
                       default=False,
+                      required=False)
+  parser.add_argument('--run-anyway',
+                      dest='run_anyway',
+                      help='Run the processing script even if files are downloaded',
+                      default=False,
+                      action='store_true',
                       required=False)
 
   return parser
@@ -209,6 +215,10 @@ class Job:
     md5sums = self.cfs.md5s
     sizes = self.cfs.sizes
 
+    if not output_paths:
+      print('No files, no job.')
+      return
+
     print('Building job for {fn1}, etc'.format(fn1=output_paths[0]))
     s = drmaa.Session()
     s.initialize()
@@ -254,6 +264,7 @@ def main(argv):
   os.makedirs(output_dir, mode=0o770, exist_ok=True)
   save_query_file = options.save_query_file
   dry_run = options.dry_run
+  run_anyway = options.run_anyway
   gdc_project_id = options.gdc_project_id
 
   case_filters['content']['value'] = gdc_project_id
@@ -269,7 +280,8 @@ def main(argv):
     with open(save_query_file, 'wb') as f:
       pickle.dump(case_files, f)
 
-  case_files = filter(are_files_needed, case_files)
+  if not run_anyway:
+    case_files = filter(are_files_needed, case_files)
 
   if dry_run:
     cnt = 0
