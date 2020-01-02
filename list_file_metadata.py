@@ -18,7 +18,7 @@ def build_parser():
                       required=True)
   parser.add_argument('--gdc-project-id',
                       dest='gdc_project_id',
-                      help='The GDC project id, e.g. SKCM, LUAD, etc',
+                      help='The GDC project id, e.g. TCGA-SKCM, TCGA-LUAD, etc',
                       type=str,
                       default=None,
                       required=True)

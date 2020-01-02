@@ -19,7 +19,7 @@ import pickle
 
 #-----------------------------------------------------------------------------
 # Resources for your job in qstat format
-RESOURCES = '-l nodes=1:ppn=2,mem=2gb,walltime=24:00:00'
+RESOURCES = '-l nodes=1:ppn=2,mem=2gb,walltime=72:00:00'
 #-----------------------------------------------------------------------------
 
 #-----------------------------------------------------------------------------
@@ -131,7 +131,7 @@ def build_parser():
                       required=False)
   parser.add_argument('--gdc-project-id',
                       dest='gdc_project_id',
-                      help='The GDC project id, e.g. SKCM, LUAD, etc',
+                      help='The GDC project id, e.g. TCGA-SKCM, TCGA-LUAD, etc',
                       type=str,
                       default=None,
                       required=True)
@@ -181,7 +181,6 @@ def get_file_list(output_dir):
   print('Starting file query')
 
   files = []
-  cnt = 0
   for case in GDCIterator('cases', case_filters):
     this_case = case['submitter_id']
     file_filters['content'][0]['content']['value'] = this_case
