@@ -32,12 +32,21 @@ case_filters = {
   }
 }
 
+# case_filters = {
+#   'op': '=',
+#   'content': {
+#     'field': 'files.experimental_strategy',
+#     'value': None
+#   }
+# }
+
 file_filters = {
   'op': '=',
   'content': {
     'field': 'cases.submitter_id',
   }
 }
+
 
 def main(argv):
   parser = build_parser()
