@@ -174,13 +174,21 @@ class GDCFileDownloader:
   def _do_download_curl(self):
     print(f'{self.output_path}: libcurl download starting.')
 
-    # GDC silently drops connections so keep trying until the file is downloaded.
+    # GDC silently, or noisily, drops connections so keep trying until the file is downloaded.
+    retry_cnt = 0
     while True:
       if os.path.exists(self.output_path) and os.path.getsize(self.output_path) >= self.expected_file_size:
         break
 
-      self._pycurl_data_transfer()
+      try:
+        self._pycurl_data_transfer()
+      except Exception as ex:
+        print(f'pycurl attempt {retry_cnt}')
+        print(ex)
+        traceback.print_exc()
 
+      # Indicates not expected file size was passed so
+      # we can't tell if it is all downloaded.
       if not self.expected_file_size:
         break
 
