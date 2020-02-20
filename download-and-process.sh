@@ -21,5 +21,5 @@ $CMD
 
 if [ $? == "0" ]
 then
-  ../process.sh $1
+  ../process.sh $1 $5 $6
 fi

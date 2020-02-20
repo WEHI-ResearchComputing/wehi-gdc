@@ -16,6 +16,8 @@ from multiprocessing.pool import Pool
 from argparse import ArgumentParser
 from helpers import GDCIterator
 import pickle
+import traceback
+import time
 
 #-----------------------------------------------------------------------------
 # Resources for your job in qstat format
@@ -91,6 +93,7 @@ file_filters = {
     }
   ]
 }
+file_fields = 'file_id,file_name,md5sum,file_size,cases.samples.portions.analytes.aliquots.submitter_id'
 #-----------------------------------------------------------------------------
 
 
@@ -147,6 +150,10 @@ def build_parser():
                       default=False,
                       action='store_true',
                       required=False)
+  parser.add_argument('--cancer',
+                      dest='cancer',
+                      help='The TCGA cancer name, e.g. COAD, SKCM, etc',
+                      required=True)
 
   return parser
 #-----------------------------------------------------------------------------
@@ -158,18 +165,20 @@ A simple container for files associated with an individual patient
 '''
 class CaseFileSet:
   def __init__(self, output_dir, case_id):
-    self.file_ids   = []
-    self.file_names = []
-    self.md5s       = []
-    self.sizes      = []
-    self.case_id    = case_id
-    self.output_dir = output_dir
+    self.file_ids      = []
+    self.file_names    = []
+    self.md5s          = []
+    self.sizes         = []
+    self.submitter_ids = []
+    self.case_id       = case_id
+    self.output_dir    = output_dir
 
-  def add(self, file_id, file_name, md5, size):
+  def add(self, file_id, file_name, md5, size, submitter_id):
     self.md5s.append(md5)
     self.file_ids.append(file_id)
     self.file_names.append(os.path.join(self.output_dir, file_name))
     self.sizes.append(size)
+    self.submitter_ids.append(submitter_id)
 #-----------------------------------------------------------------------------
 
 
@@ -186,12 +195,13 @@ def get_file_list(output_dir):
     file_filters['content'][0]['content']['value'] = this_case
 
     cfs = CaseFileSet(output_dir, case['case_id'])
-    for fl in GDCIterator('files', file_filters):
+    for fl in GDCIterator('files', file_filters, fields=file_fields):
       filename = fl['file_name']
       file_id  = fl['file_id']
       md5      = fl['md5sum']
       size     = fl['file_size']
-      cfs.add(file_id, filename, md5, size)
+      submitter_id = fl['cases'][0]['samples'][0]['portions'][0]['analytes'][0]['aliquots'][0]['submitter_id']
+      cfs.add(file_id, filename, md5, size, submitter_id)
       print(f'found {filename}')
 
     files.append(cfs)
@@ -205,18 +215,25 @@ def get_file_list(output_dir):
  This class builds and manages a batch job
 """
 class Job:
-  def __init__(self, case_file_set):
+  def __init__(self, case_file_set, cancer):
     self.cfs = case_file_set
+    self.cancer = cancer
 
   def __call__(self, *args, **kwargs):
+    while not self._submitted():
+      print('Job submit failed, retrying in 120 seconds')
+      time.sleep(120)
+
+  def _submitted(self):
     output_paths = self.cfs.file_names
     file_ids = self.cfs.file_ids
     md5sums = self.cfs.md5s
     sizes = self.cfs.sizes
+    submitter_ids = self.cfs.submitter_ids
 
     if not output_paths:
       print('No files, no job.')
-      return
+      return True
 
     print('Building job for {fn1}, etc'.format(fn1=output_paths[0]))
     s = drmaa.Session()
@@ -229,7 +246,14 @@ class Job:
       jt.joinFiles = True
       jt.jobName = os.path.basename(output_paths[0])
       jt.remoteCommand = os.path.join(os.getcwd(), 'download-and-process.sh')
-      jt.args = [','.join(output_paths), ','.join(file_ids), ','.join(md5sums), ','.join([str(size) for size in sizes])]
+      jt.args = [
+        ','.join(output_paths),
+        ','.join(file_ids),
+        ','.join(md5sums),
+        ','.join([str(size) for size in sizes]),
+        ','.join(submitter_ids),
+        self.cancer
+      ]
       jt.nativeSpecification = RESOURCES
       job_id = s.runJob(jt)
 
@@ -246,8 +270,14 @@ class Job:
       resource usage:
       %(resourceUsage)s
       """ % info._asdict())
+    except drmaa.errors.InternalException as ex:
+      print(ex)
+      traceback.print_stack()
+      return False
     finally:
       s.exit()
+
+    return True
 #-----------------------------------------------------------------------------
 
 
@@ -265,6 +295,7 @@ def main(argv):
   dry_run = options.dry_run
   run_anyway = options.run_anyway
   gdc_project_id = options.gdc_project_id
+  cancer = options.cancer
 
   case_filters['content']['value'] = gdc_project_id
 
@@ -302,7 +333,7 @@ def main(argv):
     if cnt<=start_after:
       continue
 
-    submitted_jobs.append(p.apply_async(Job(fn)))
+    submitted_jobs.append(p.apply_async(Job(fn, cancer)))
 
   # Wait for them to finish
   for submitted_job in submitted_jobs:

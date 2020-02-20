@@ -15,7 +15,7 @@ This class implements a Python iterator that takes care of
 paging through the output from a query against the provided API endpoint
 '''
 class GDCIterator:
-  def __init__(self, ep, filters, max_count=sys.maxsize):
+  def __init__(self, ep, filters, max_count=sys.maxsize, fields=None):
     self.ep = ep
     self.filters = filters
     self.max_count = max_count
@@ -23,6 +23,7 @@ class GDCIterator:
     self.total = 0
     self.frm = 0
     self.returned = 0
+    self.fields = fields
 
   def __iter__(self):
     return self
@@ -34,6 +35,8 @@ class GDCIterator:
       'size': str(min(500, self.max_count)),
       'from': str(self.frm)
     }
+    if self.fields:
+      query['fields'] = self.fields
 
     retry_count = 0
     while retry_count < 3:
