@@ -35,6 +35,8 @@ class GDCIterator:
       'size': str(min(500, self.max_count)),
       'from': str(self.frm)
     }
+    self.frm += 500
+
     if self.fields:
       query['fields'] = self.fields
 
