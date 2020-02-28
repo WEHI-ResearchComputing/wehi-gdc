@@ -154,6 +154,11 @@ def build_parser():
                       dest='cancer',
                       help='The TCGA cancer name, e.g. COAD, SKCM, etc',
                       required=True)
+  parser.add_argument('--whitelist',
+                      dest='whitelist',
+                      help='A file of case ids to process. If not specified, all cases are processed',
+                      default=None,
+                      required=False)
 
   return parser
 #-----------------------------------------------------------------------------
@@ -279,8 +284,19 @@ class Job:
 
     return True
 #-----------------------------------------------------------------------------
+def read_whitelist(whitelist_file):
+  if not whitelist_file:
+    return None
 
+  with open(whitelist_file) as f:
+    wl = f.readlines()
 
+  whitelist = set()
+  for c in wl:
+    if len(c) != 0:
+      whitelist.add(c.strip())
+
+  return whitelist
 #-----------------------------------------------------------------------------
 def main(argv):
   parser = build_parser()
@@ -296,6 +312,7 @@ def main(argv):
   run_anyway = options.run_anyway
   gdc_project_id = options.gdc_project_id
   cancer = options.cancer
+  whitelist = read_whitelist(options.whitelist)
 
   case_filters['content']['value'] = gdc_project_id
 
@@ -312,6 +329,9 @@ def main(argv):
 
   if not run_anyway:
     case_files = filter(are_files_needed, case_files)
+
+  if whitelist:
+    case_files = filter(lambda c: c.case_id in whitelist, case_files)
 
   if dry_run:
     cnt = 0
