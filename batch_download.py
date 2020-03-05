@@ -223,11 +223,46 @@ class Job:
   def __init__(self, case_file_set, cancer):
     self.cfs = case_file_set
     self.cancer = cancer
+    self.session = None
 
   def __call__(self, *args, **kwargs):
     while not self._submitted():
       print('Job submit failed, retrying in 120 seconds')
       time.sleep(120)
+
+    if not self.session:
+      return
+
+    finished = False
+    while not finished:
+      try:
+        info = self.session.wait(self.job_id, 30)
+        print('Completed job: {job_id}'.format(job_id=self.job_id))
+        print("""\
+          id:                        %(jobId)s
+          exited:                    %(hasExited)s
+          signaled:                  %(hasSignal)s
+          with signal (id signaled): %(terminatedSignal)s
+          dumped core:               %(hasCoreDump)s
+          aborted:                   %(wasAborted)s
+          resource usage:
+          %(resourceUsage)s
+          """ % info._asdict())
+        finished = True
+        self.session.exit()
+      except drmaa.errors.NoActiveSessionException:
+        finished = True
+        print('No active session, giving up waiting')
+      except drmaa.errors.ExitTimeoutException:
+        print('Timeout, trying polling again in 60s')
+        time.sleep(60)
+      except drmaa.errors.InvalidJobException:
+        print('Invalid job id, assuming Completed job: {job_id}'.format(job_id=self.job_id))
+        finished = True
+      except drmaa.errors.InternalException as ex:
+        print(ex)
+        traceback.print_stack()
+        time.sleep(120)
 
   def _submitted(self):
     output_paths = self.cfs.file_names
@@ -243,6 +278,7 @@ class Job:
     print('Building job for {fn1}, etc'.format(fn1=output_paths[0]))
     s = drmaa.Session()
     s.initialize()
+    self.session = s
 
     try:
       jt = s.createJobTemplate()
@@ -260,27 +296,12 @@ class Job:
         self.cancer
       ]
       jt.nativeSpecification = RESOURCES
-      job_id = s.runJob(jt)
+      self.job_id = s.runJob(jt)
 
-      print('Submitted job: {job_id}'.format(job_id=job_id))
-      info = s.wait(job_id, drmaa.Session.TIMEOUT_WAIT_FOREVER)
-      print('Completed job: {job_id}'.format(job_id=job_id))
-      print("""\
-      id:                        %(jobId)s
-      exited:                    %(hasExited)s
-      signaled:                  %(hasSignal)s
-      with signal (id signaled): %(terminatedSignal)s
-      dumped core:               %(hasCoreDump)s
-      aborted:                   %(wasAborted)s
-      resource usage:
-      %(resourceUsage)s
-      """ % info._asdict())
     except drmaa.errors.InternalException as ex:
       print(ex)
       traceback.print_stack()
       return False
-    finally:
-      s.exit()
 
     return True
 #-----------------------------------------------------------------------------

@@ -185,6 +185,7 @@ class GDCFileDownloader:
       if os.path.exists(self.output_path) and os.path.getsize(self.output_path) >= self.expected_file_size:
         break
 
+      retry_cnt += 1
       try:
         self._pycurl_data_transfer()
       except Exception as ex:

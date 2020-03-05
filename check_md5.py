@@ -2,8 +2,10 @@ import os
 import glob
 from helpers import md5sum
 import multiprocessing as mp
+import sys
 
-bam_files = glob.glob('/stornext/HPCScratch/PapenfussLab/projects/gdc_download/*.bam')
+cancer = sys.argv[1]
+bam_files = glob.glob(f'/stornext/HPCScratch/PapenfussLab/projects/gdc_download/{cancer}/*.bam')
 
 class FileChecker:
   def __init__(self, fn):
