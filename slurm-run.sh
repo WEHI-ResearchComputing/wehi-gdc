@@ -7,8 +7,9 @@ fi
 
 CANCER=$1
 
-qsub -j oe -N ${CANCER} -l walltime=300:00:00,nodes=1:ppn=2,mem=2gb <<EOF
-cd \$PBS_O_WORKDIR
+sbatch --job-name=${CANCER} --cpus-per-task=2 --mem=2G --nodes=1 --time=300:03:03 --output=${CANCER}-leader-%j.out <<EOF
+#!/bin/bash
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$HOME/slurm/lib
 python -u ./batch_download.py --num-jobs 50 --output-dir /stornext/HPCScratch/PapenfussLab/projects/gdc_download/${CANCER}/ --gdc-project-id TCGA-${CANCER} --save-query-file ${CANCER}-query.pkl --cancer ${CANCER} --run-anyway
 EOF
 

@@ -4,6 +4,7 @@ nohup.out
 .idea/
 gdc-user-token.txt
 *.bam
+*.out
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

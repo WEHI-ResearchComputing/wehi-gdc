@@ -20,8 +20,10 @@ import traceback
 import time
 
 #-----------------------------------------------------------------------------
-# Resources for your job in qstat format
-RESOURCES = '-l nodes=1:ppn=2,mem=2gb,walltime=72:00:00'
+# Resources for your job in qsub format
+PBS_RESOURCES = '-l nodes=1:ppn=2,mem=2gb,walltime=72:01:00'
+# Resources for your job in sbatch format
+SLURM_RESOURCES = '--nodes=1 --cpus-per-task=2 --mem=2000 --time=72:01:00'
 #-----------------------------------------------------------------------------
 
 #-----------------------------------------------------------------------------
@@ -150,6 +152,12 @@ def build_parser():
                       default=False,
                       action='store_true',
                       required=False)
+  parser.add_argument('--metadata-only',
+                      dest='metadata_only',
+                      help='Only downoad the metadata',
+                      default=False,
+                      action='store_true',
+                      required=False)
   parser.add_argument('--cancer',
                       dest='cancer',
                       help='The TCGA cancer name, e.g. COAD, SKCM, etc',
@@ -212,6 +220,41 @@ def get_file_list(output_dir):
     files.append(cfs)
 
   return files
+#-----------------------------------------------------------------------------
+
+
+#-----------------------------------------------------------------------------
+'''
+A class that runs a synchronous bash command
+'''
+class BashJob:
+  def __init__(self, case_file_set, cancer):
+    self.cfs = case_file_set
+    self.cancer = cancer
+
+  def __call__(self, *args, **kwargs):
+    output_paths = self.cfs.file_names
+    file_ids = self.cfs.file_ids
+    md5sums = self.cfs.md5s
+    sizes = self.cfs.sizes
+    submitter_ids = self.cfs.submitter_ids
+
+    pgm = os.path.join(os.getcwd(), 'download-and-process.sh')
+    cmd = ' '.join([
+      pgm,
+      ','.join(output_paths),
+      ','.join(file_ids),
+      ','.join(md5sums),
+      ','.join([str(size) for size in sizes]),
+      ','.join(submitter_ids),
+      self.cancer
+    ])
+    rc = os.system(cmd)
+    if rc != 0:
+      print(f'CMD failed rc={rc}: {cmd}')
+      return False
+    else:
+      return True
 #-----------------------------------------------------------------------------
 
 
@@ -279,11 +322,14 @@ class Job:
     s = drmaa.Session()
     s.initialize()
     self.session = s
-
+    is_slurm = s.drmsInfo.startswith('SLURM')
     try:
       jt = s.createJobTemplate()
       jt.workingDirectory = os.getcwd()
-      jt.outputPath = os.getcwd()
+      if is_slurm:
+        jt.outputPath = 'localhost:' + os.path.join(os.getcwd(), f'{self.cancer}-%j.out')
+      else:
+        jt.outputPath = os.getcwd()
       jt.joinFiles = True
       jt.jobName = os.path.basename(output_paths[0])
       jt.remoteCommand = os.path.join(os.getcwd(), 'download-and-process.sh')
@@ -295,7 +341,10 @@ class Job:
         ','.join(submitter_ids),
         self.cancer
       ]
-      jt.nativeSpecification = RESOURCES
+      if is_slurm:
+        jt.nativeSpecification = SLURM_RESOURCES
+      else:
+        jt.nativeSpecification = PBS_RESOURCES
       self.job_id = s.runJob(jt)
 
     except drmaa.errors.InternalException as ex:
@@ -334,6 +383,7 @@ def main(argv):
   gdc_project_id = options.gdc_project_id
   cancer = options.cancer
   whitelist = read_whitelist(options.whitelist)
+  metadata_only = options.metadata_only
 
   case_filters['content']['value'] = gdc_project_id
 
@@ -348,11 +398,15 @@ def main(argv):
     with open(save_query_file, 'wb') as f:
       pickle.dump(case_files, f)
 
+  if metadata_only:
+    quit()
+
   if not run_anyway:
     case_files = filter(are_files_needed, case_files)
 
   if whitelist:
     case_files = filter(lambda c: c.case_id in whitelist, case_files)
+
 
   if dry_run:
     cnt = 0

@@ -12,10 +12,10 @@ CMD="python -u single_file_download.py --output-paths $1 --file-ids $2 --md5sums
 echo $CMD
 
 # Stop queue from overloading
-while [ $(qstat -u $USER|wc -l) -gt 1500 ]
-do
-   sleep 600
-done
+#while [ $(qstat -u $USER|wc -l) -gt 1500 ]
+#do
+#   sleep 600
+#done
 
 $CMD
 
