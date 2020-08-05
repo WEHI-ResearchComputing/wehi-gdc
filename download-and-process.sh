@@ -5,6 +5,8 @@
 # - calls a python script to download the file
 # - if the dl succeeds calls the process.sh script to actually process the file.
 
+hostname
+
 # Setup your python enviroment. This may be a virtual env or a conda
 module load python/3.7.0
 

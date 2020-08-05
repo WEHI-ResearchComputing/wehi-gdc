@@ -21,9 +21,9 @@ import time
 
 #-----------------------------------------------------------------------------
 # Resources for your job in qsub format
-PBS_RESOURCES = '-l nodes=1:ppn=2,mem=2gb,walltime=72:01:00'
+PBS_RESOURCES = '-l nodes=1:ppn=2,mem=12gb,walltime=72:01:00'
 # Resources for your job in sbatch format
-SLURM_RESOURCES = '--nodes=1 --cpus-per-task=2 --mem=2000 --time=72:01:00'
+SLURM_RESOURCES = '--nodes=1 --cpus-per-task=2 --mem=12000 --time=72:01:00'
 #-----------------------------------------------------------------------------
 
 #-----------------------------------------------------------------------------
@@ -167,6 +167,11 @@ def build_parser():
                       help='A file of case ids to process. If not specified, all cases are processed',
                       default=None,
                       required=False)
+  parser.add_argument('--logdir',
+                      dest='logdir',
+                      help='Directory for job output files',
+                      default=None,
+                      required=False)
 
   return parser
 #-----------------------------------------------------------------------------
@@ -263,9 +268,10 @@ class BashJob:
  This class builds and manages a batch job
 """
 class Job:
-  def __init__(self, case_file_set, cancer):
+  def __init__(self, case_file_set, cancer, logdir):
     self.cfs = case_file_set
     self.cancer = cancer
+    self.logdir = logdir
     self.session = None
 
   def __call__(self, *args, **kwargs):
@@ -327,7 +333,7 @@ class Job:
       jt = s.createJobTemplate()
       jt.workingDirectory = os.getcwd()
       if is_slurm:
-        jt.outputPath = 'localhost:' + os.path.join(os.getcwd(), f'{self.cancer}-%j.out')
+        jt.outputPath = 'localhost:' + os.path.join(self.logdir, f'{self.cancer}-%j.out')
       else:
         jt.outputPath = os.getcwd()
       jt.joinFiles = True
@@ -384,6 +390,9 @@ def main(argv):
   cancer = options.cancer
   whitelist = read_whitelist(options.whitelist)
   metadata_only = options.metadata_only
+  logdir = options.logdir
+  if not logdir:
+    logdir = os.getcwd()
 
   case_filters['content']['value'] = gdc_project_id
 
@@ -428,7 +437,7 @@ def main(argv):
     if cnt<=start_after:
       continue
 
-    submitted_jobs.append(p.apply_async(Job(fn, cancer)))
+    submitted_jobs.append(p.apply_async(Job(fn, cancer, logdir)))
 
   # Wait for them to finish
   for submitted_job in submitted_jobs:
